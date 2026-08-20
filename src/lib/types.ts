@@ -79,6 +79,28 @@ export const RIG_MORPHOLOGIES: { id: RigMorphology; label: string }[] = [
   { id: "amorphous", label: "Amorphous" },
 ];
 
+export type GameProfileEngine = "godot" | "phaser" | "generic";
+export type GameProfileDoc = {
+  schema?: number;
+  engine?: GameProfileEngine;
+  baseUnitPx?: number;
+  outlinePx?: number;
+  fps?: { default?: number; overrides?: Record<string, number> };
+  pivot?: { x: number; y: number };
+  palette?: { name?: string; colors?: string[] };
+  shadow?: string;
+  socketNames?: string[];
+  export?: { destination?: string; godotResPrefix?: string };
+} & Record<string, unknown>;
+export type GameProfile = { id: string; name: string; profile: GameProfileDoc; createdAt: string; updatedAt: string };
+
+export type SocketPoint = { name: string; x: number; y: number };
+export type HitRegion = { name: string; kind: "hitbox" | "hurtbox" | "collision"; x: number; y: number; width: number; height: number };
+export type FrameEvent = { frame: number; name: string };
+export type AssetProduction = { sockets: SocketPoint[]; hitboxes: HitRegion[]; events: FrameEvent[]; tags: string[] };
+
+export type EngineExportResult = { engine: string; destination: string; files: string[] };
+
 export type StudioError = { code: string; message: string };
 
 export function errorMessage(error: unknown): string {

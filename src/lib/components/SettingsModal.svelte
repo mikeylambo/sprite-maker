@@ -1,12 +1,14 @@
 <script lang="ts">
-  import { X, Settings, Bot, Image, Palette, CheckCircle2, CircleSlash2, RefreshCw, Plus, Trash2, PlugZap, ShieldCheck, Terminal, ArrowRight } from "lucide-svelte";
-  import type { ImageProviderInput, ProviderConnectionTest, ProviderStatus } from "$lib/types";
+  import { X, Settings, Bot, Image, Palette, CheckCircle2, CircleSlash2, RefreshCw, Plus, Trash2, PlugZap, ShieldCheck, Terminal, ArrowRight, Gamepad2 } from "lucide-svelte";
+  import { onMount } from "svelte";
+  import { api } from "$lib/api";
+  import { errorMessage, type GameProfile, type GameProfileDoc, type GameProfileEngine, type ImageProviderInput, type ProviderConnectionTest, type ProviderStatus } from "$lib/types";
   import StylePicker from "$lib/components/StylePicker.svelte";
   import type { StylePresetId } from "$lib/style-presets";
   import type { CustomArtStyle } from "$lib/library-types";
 
-  let { providers, defaultProvider, theme, workspaceStyle, customStyles = [], onDefaultProvider, onTheme, onWorkspaceStyle, onRefresh, onSaveImageProvider, onDeleteImageProvider, onTestImageProvider, onClose }: {
-    providers: ProviderStatus[]; defaultProvider: string; theme: string; workspaceStyle: StylePresetId; customStyles?: CustomArtStyle[];
+  let { providers, defaultProvider, theme, workspaceStyle, customStyles = [], workspaceId, onDefaultProvider, onTheme, onWorkspaceStyle, onRefresh, onSaveImageProvider, onDeleteImageProvider, onTestImageProvider, onClose }: {
+    providers: ProviderStatus[]; defaultProvider: string; theme: string; workspaceStyle: StylePresetId; customStyles?: CustomArtStyle[]; workspaceId: string;
     onDefaultProvider: (provider: string) => void | Promise<void>; onTheme: (theme: string) => void; onWorkspaceStyle: (style: StylePresetId) => void | Promise<void>;
     onRefresh: () => void | Promise<void>; onSaveImageProvider: (input: ImageProviderInput) => Promise<void>; onDeleteImageProvider: (id: string) => Promise<void>;
     onTestImageProvider: (input: ImageProviderInput) => Promise<ProviderConnectionTest>; onClose: () => void;
@@ -18,7 +20,92 @@
   let testingProvider = $state(false);
   let testResult = $state<{ kind: "success" | "error"; detail: string }>();
   let refreshing = $state(false);
-  const sections = [{ id: "providers", name: "Providers", icon: Bot }, { id: "image-providers", name: "Image generation", icon: Image }, { id: "generation", name: "Project art", icon: Palette }, { id: "appearance", name: "Appearance", icon: Settings }, { id: "general", name: "General", icon: ShieldCheck }];
+  const sections = [{ id: "providers", name: "Providers", icon: Bot }, { id: "image-providers", name: "Image generation", icon: Image }, { id: "generation", name: "Project art", icon: Palette }, { id: "game", name: "Game profile", icon: Gamepad2 }, { id: "appearance", name: "Appearance", icon: Settings }, { id: "general", name: "General", icon: ShieldCheck }];
+
+  let profiles = $state<GameProfile[]>([]);
+  let assignedProfileId = $state<string>("");
+  let editingProfileId = $state<string | null>(null);
+  let profileOpen = $state(false);
+  let profileSaving = $state(false);
+  let profileError = $state("");
+  let profileName = $state("");
+  let profileEngine = $state<GameProfileEngine>("godot");
+  let profileBaseUnit = $state(64);
+  let profileOutline = $state(0);
+  let profileFps = $state(10);
+  let profilePivotX = $state(0.5);
+  let profilePivotY = $state(1);
+  let profileSockets = $state("core, feet");
+  let profilePalette = $state("");
+  let profileDestination = $state("");
+  let profileResPrefix = $state("res://assets/sprites");
+
+  async function loadProfiles() {
+    try {
+      profiles = await api.listGameProfiles();
+      if (workspaceId) {
+        const assigned = await api.getWorkspaceProfile(workspaceId);
+        assignedProfileId = assigned?.id ?? "";
+      }
+    } catch (error) { profileError = errorMessage(error); }
+  }
+  onMount(loadProfiles);
+
+  function openProfileEditor(profile?: GameProfile) {
+    profileError = "";
+    profileOpen = true;
+    editingProfileId = profile?.id ?? null;
+    profileName = profile?.name ?? "";
+    const doc = profile?.profile ?? {};
+    profileEngine = doc.engine ?? "godot";
+    profileBaseUnit = doc.baseUnitPx ?? 64;
+    profileOutline = doc.outlinePx ?? 0;
+    profileFps = doc.fps?.default ?? 10;
+    profilePivotX = doc.pivot?.x ?? 0.5;
+    profilePivotY = doc.pivot?.y ?? 1;
+    profileSockets = (doc.socketNames ?? []).join(", ");
+    profilePalette = (doc.palette?.colors ?? []).join(", ");
+    profileDestination = doc.export?.destination ?? "";
+    profileResPrefix = doc.export?.godotResPrefix ?? "res://assets/sprites";
+  }
+
+  async function saveProfile2() {
+    profileSaving = true;
+    profileError = "";
+    const splitList = (value: string) => value.split(",").map((item) => item.trim()).filter(Boolean);
+    const doc: GameProfileDoc = {
+      schema: 1,
+      engine: profileEngine,
+      baseUnitPx: profileBaseUnit,
+      outlinePx: profileOutline,
+      fps: { default: profileFps },
+      pivot: { x: profilePivotX, y: profilePivotY },
+      socketNames: splitList(profileSockets),
+    };
+    const colors = splitList(profilePalette);
+    if (colors.length) doc.palette = { colors };
+    const exportConfig: NonNullable<GameProfileDoc["export"]> = {};
+    if (profileDestination.trim()) exportConfig.destination = profileDestination.trim();
+    if (profileEngine === "godot") exportConfig.godotResPrefix = profileResPrefix.trim();
+    if (Object.keys(exportConfig).length) doc.export = exportConfig;
+    try {
+      const saved = await api.saveGameProfile(editingProfileId, profileName, doc);
+      await loadProfiles();
+      editingProfileId = saved.id;
+      profileOpen = false;
+    } catch (error) { profileError = errorMessage(error); } finally { profileSaving = false; }
+  }
+
+  async function removeProfile(id: string) {
+    try { await api.deleteGameProfile(id); if (editingProfileId === id) { profileOpen = false; editingProfileId = null; } await loadProfiles(); }
+    catch (error) { profileError = errorMessage(error); }
+  }
+
+  async function assignProfile(id: string) {
+    profileError = "";
+    try { await api.assignGameProfile(workspaceId, id || null); assignedProfileId = id; }
+    catch (error) { profileError = errorMessage(error); }
+  }
   const agents = $derived(providers.filter((item) => item.kind === "agent"));
   const customProviders = $derived(providers.filter((item) => item.kind === "image" && item.configurable && item.id !== "midjourney"));
 
@@ -68,6 +155,29 @@
           </div>
         {:else if section === "generation"}
           <div class="heading"><div><span class="eyebrow">Visual direction</span><h2>Project art</h2><p>This becomes the default art direction for every chat in this project.</p></div></div><StylePicker value={workspaceStyle} {customStyles} onChange={(value) => { if (value !== "inherit") return onWorkspaceStyle(value); }}/><div class="note"><strong>Chats can override this default.</strong><p>Open the art control in a chat header to choose a direction for only that conversation.</p></div>
+        {:else if section === "game"}
+          <div class="heading"><div><span class="eyebrow">Production contract</span><h2>Game profile</h2><p>Assets in this project are generated, validated, and exported against the assigned game's rules.</p></div><button class="secondary" onclick={() => openProfileEditor()}><Plus size={13}/>New profile</button></div>
+          {#if profileError}<div class="test-result error">{profileError}</div>{/if}
+          <label class="setting-row"><span><strong>Profile for this project</strong><small>Used by engine export; more stages adopt it as they land.</small></span><select value={assignedProfileId} onchange={(event) => assignProfile(event.currentTarget.value)}><option value="">None</option>{#each profiles as profile}<option value={profile.id}>{profile.name}</option>{/each}</select></label>
+          <div class="section-label"><Gamepad2 size={13}/><span>Profiles</span></div>
+          <div class="saved-list">
+            {#if profiles.length === 0}<div class="empty"><Gamepad2 size={22}/><strong>No game profiles yet</strong><p>Create one per title — engine, scale, palette, sockets, and export destination.</p></div>{/if}
+            {#each profiles as profile}<button class="saved-provider" class:active={editingProfileId === profile.id && profileOpen} onclick={() => openProfileEditor(profile)}><div class="provider-icon"><Gamepad2 size={16}/></div><span><strong>{profile.name}</strong><small>{profile.profile.engine ?? "generic"} · {profile.profile.baseUnitPx ?? "?"}px</small></span>{#if assignedProfileId === profile.id}<i class="ready">Assigned</i>{/if}</button>{/each}
+          </div>
+          {#if profileOpen}
+            <form class="provider-form" onsubmit={(event) => { event.preventDefault(); saveProfile2(); }}>
+              <div class="form-heading"><div><span class="eyebrow">Game rules</span><h3>{profileName || "New game profile"}</h3></div><button type="button" class="icon-button" aria-label="Close profile editor" onclick={() => profileOpen = false}><X size={15}/></button></div>
+              <label>Name<input required maxlength="120" bind:value={profileName} placeholder="Neon Infinite"/></label>
+              <label>Engine<select bind:value={profileEngine}><option value="godot">Godot 4</option><option value="phaser">Phaser 3</option><option value="generic">Generic (manifest only)</option></select></label>
+              <div class="pair"><label>Base unit (px)<input type="number" min="1" max="4096" bind:value={profileBaseUnit}/></label><label>Outline (px)<input type="number" min="0" max="64" bind:value={profileOutline}/></label></div>
+              <div class="pair"><label>Default FPS<input type="number" min="1" max="60" bind:value={profileFps}/></label><label>Pivot (x, y)<span class="pivot-pair"><input type="number" step="0.05" min="0" max="1" bind:value={profilePivotX} aria-label="Pivot x"/><input type="number" step="0.05" min="0" max="1" bind:value={profilePivotY} aria-label="Pivot y"/></span></label></div>
+              <label>Socket names<input bind:value={profileSockets} placeholder="core, feet, muzzle, overhead"/></label>
+              <label>Palette colors<input bind:value={profilePalette} placeholder="#5b3a8e, #2e2440 (optional)"/></label>
+              <label>Export destination<input bind:value={profileDestination} placeholder="/absolute/path/into/game/repo/assets/sprites"/></label>
+              {#if profileEngine === "godot"}<label>Godot res:// prefix<input bind:value={profileResPrefix} placeholder="res://assets/sprites"/></label>{/if}
+              <footer>{#if editingProfileId}<button type="button" class="danger" onclick={() => removeProfile(editingProfileId!)}><Trash2 size={13}/>Delete</button>{/if}<div><button type="submit" class="primary" disabled={profileSaving}>{profileSaving ? "Saving…" : "Save profile"}</button></div></footer>
+            </form>
+          {/if}
         {:else if section === "appearance"}
           <div class="heading"><div><span class="eyebrow">Interface</span><h2>Appearance</h2><p>Choose how Sprite Studio looks on this computer.</p></div></div><label class="setting-row"><span><strong>Theme</strong><small>Applied immediately and saved locally.</small></span><select value={theme} onchange={(event) => onTheme(event.currentTarget.value)}><option value="system">System</option><option value="dark">Dark</option><option value="light">Light</option></select></label>
         {:else}<div class="heading"><div><span class="eyebrow">About your data</span><h2>General</h2><p>Sprite Studio is local-first by design.</p></div></div><div class="note"><strong>Bring your own AI. Own your assets.</strong><p>Images stay in your project folder and application metadata stays in SQLite. Removing a project from the app does not delete its files.</p></div>{/if}
@@ -86,4 +196,5 @@
   .custom-layout{display:grid;grid-template-columns:235px minmax(0,1fr);min-height:435px;margin-top:18px;border:1px solid var(--border);border-radius:11px;overflow:hidden;background:var(--sidebar)}.saved-list{padding:9px;border-right:1px solid var(--border);background:#090b09}.saved-provider{width:100%;display:grid;grid-template-columns:32px minmax(0,1fr) auto;align-items:center;gap:9px;padding:9px;border:0;border-radius:7px;background:transparent;color:var(--text);text-align:left;cursor:pointer}.saved-provider:hover,.saved-provider.active{background:var(--selected)}.saved-provider .provider-icon{width:32px;height:32px}.saved-provider strong,.saved-provider small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.saved-provider strong{font-size:10px}.saved-provider small{margin-top:4px;font-size:9px;color:var(--faint)}.saved-provider i{font-size:8px;font-style:normal;color:var(--faint)}.saved-provider i.ready{color:#8eb57a}.empty{padding:28px 12px;text-align:center;color:var(--faint)}.empty strong{display:block;margin-top:10px;font-size:11px;color:var(--muted)}.empty p{font-size:9px;line-height:1.5}.gateway-note{margin:16px 4px 4px;padding:11px;border:1px solid var(--border);border-radius:8px;background:var(--surface)}.gateway-note strong{font-size:10px}.gateway-note p{margin:5px 0 9px;font-size:9px;line-height:1.5;color:var(--faint)}
   .provider-form{padding:25px 27px}.form-heading{display:flex;align-items:flex-start;justify-content:space-between}.form-heading h3{font-size:17px}.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:15px 12px;margin-top:22px}.form-grid label{font-size:10px;color:var(--muted)}.form-grid label.wide{grid-column:1/-1}.form-grid input,.form-grid select{width:100%;height:36px;display:block;margin-top:6px;padding:0 10px;border:1px solid var(--border-strong);border-radius:7px;outline:0;background:var(--bg);color:var(--text);font:inherit;font-size:11px}.form-grid input:focus,.form-grid select:focus{border-color:var(--accent);box-shadow:0 0 0 3px #a7b66612}.form-grid input:disabled{opacity:.6}.form-grid small{display:block;margin-top:5px;font-size:8px;line-height:1.4;color:var(--faint)}.provider-form footer{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:20px;padding-top:16px;border-top:1px solid var(--border)}.provider-form footer>div{display:flex;gap:7px;margin-left:auto}.danger{height:32px;display:flex;align-items:center;gap:6px;padding:0 9px;border:1px solid #6f4141;border-radius:7px;background:transparent;color:#cf7a75;font:inherit;font-size:10px;cursor:pointer}.test-result{margin-top:13px;padding:9px 10px;border:1px solid var(--border);border-radius:6px;font-size:10px;line-height:1.45;color:var(--muted)}.test-result.success{border-color:#597551;color:#91b785;background:#7193660d}.test-result.error{border-color:#754848;color:#d88a84;background:#9a55550d}.form-placeholder{display:grid;place-content:center;justify-items:center;padding:40px;color:var(--faint);text-align:center}.form-placeholder strong{margin-top:12px;font-size:12px;color:var(--muted)}.form-placeholder p{max-width:300px;margin:7px 0;font-size:10px;line-height:1.5}
   .note{margin-top:22px;padding:16px;border:1px solid var(--border);border-radius:9px;background:var(--surface)}.note strong,.setting-row strong{font-size:12px}.note p{margin:6px 0 0;font-size:11px;line-height:1.55;color:var(--muted)}.setting-row{height:70px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border)}.setting-row strong,.setting-row small{display:block}.setting-row small{margin-top:4px;font-size:10px;color:var(--faint)}.setting-row select{height:32px;padding:0 8px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);font:inherit;font-size:11px}@media(max-width:820px){.modal{width:calc(100vw - 24px);height:calc(100vh - 24px)}.layout{grid-template-columns:170px minmax(0,1fr)}main{padding:28px 24px}.provider-grid,.image-provider-cards{grid-template-columns:1fr}.custom-layout{grid-template-columns:1fr}.saved-list{border-right:0;border-bottom:1px solid var(--border)}.provider-grid p{min-height:0}}
+.pivot-pair{display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:5px}.pivot-pair input{margin-top:0}
 </style>

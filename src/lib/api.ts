@@ -1,5 +1,5 @@
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
-import type { Animation, AnimationInput, AnimationTemplate, Asset, AssetPack, AssetVersion, BackgroundJob, Conversation, ExportResult, FrameOptimizationResult, GenerationManifest, ImageProviderInput, Message, MotionPlan, ProceduralVfxInput, ProjectBackup, ProviderConnectionTest, ProviderRequestOptions, ProviderStatus, QualityReport, ReferenceCategory, ReferenceImage, RigFitReport, RigInput, RigRenderResult, RigSuggestion, Rig, SidebarSnapshot, SpriteSheet, SpriteSheetInput, TemplateApplication, TerrainExportInput, TerrainExportResult, VfxEffect, Workspace, Worktree, WorktreeKind } from "$lib/types";
+import type { Animation, AnimationInput, AnimationTemplate, Asset, AssetPack, AssetProduction, AssetVersion, BackgroundJob, Conversation, EngineExportResult, ExportResult, FrameOptimizationResult, GameProfile, GameProfileDoc, GenerationManifest, ImageProviderInput, Message, MotionPlan, ProceduralVfxInput, ProjectBackup, ProviderConnectionTest, ProviderRequestOptions, ProviderStatus, QualityReport, ReferenceCategory, ReferenceImage, RigFitReport, RigInput, RigRenderResult, RigSuggestion, Rig, SidebarSnapshot, SpriteSheet, SpriteSheetInput, TemplateApplication, TerrainExportInput, TerrainExportResult, VfxEffect, Workspace, Worktree, WorktreeKind } from "$lib/types";
 
 export const api = {
   listWorkspaces: () => invoke<Workspace[]>("list_workspaces"),
@@ -86,6 +86,14 @@ export const api = {
   deleteAnimationTemplate: (id: string) => invoke<void>("delete_animation_template", { id }),
   getSetting: (key: string) => invoke<unknown>("get_setting", { key }),
   setSetting: (key: string, value: unknown) => invoke<void>("set_setting", { key, value }),
+  listGameProfiles: () => invoke<GameProfile[]>("list_game_profiles"),
+  saveGameProfile: (id: string | null, name: string, profile: GameProfileDoc) => invoke<GameProfile>("save_game_profile", { id, name, profile }),
+  deleteGameProfile: (id: string) => invoke<void>("delete_game_profile", { id }),
+  assignGameProfile: (workspaceId: string, profileId: string | null) => invoke<void>("assign_game_profile", { workspaceId, profileId }),
+  getWorkspaceProfile: (workspaceId: string) => invoke<GameProfile | null>("get_workspace_profile", { workspaceId }),
+  getAssetProduction: (assetId: string) => invoke<AssetProduction>("get_asset_production", { assetId }),
+  setAssetProduction: (assetId: string, production: AssetProduction) => invoke<AssetProduction>("set_asset_production", { assetId, production }),
+  exportSpriteSheetToEngine: (sheetId: string, profileId?: string) => invoke<EngineExportResult>("export_sprite_sheet_to_engine", { sheetId, profileId: profileId ?? null }),
 };
 
 export const assetUrl = (path: string) => convertFileSrc(path);

@@ -381,8 +381,16 @@ pub fn export_sprite_sheet_to_engine(
     profile_id: Option<String>,
     state: State<'_, AppState>,
 ) -> CommandResult<EngineExportResult> {
-    let sheet = load_sheet(&state, &sheet_id)?;
-    let profile = resolve_profile(&state, &sheet.project_id, profile_id.as_deref())?;
+    export_sprite_sheet_internal(&state, &sheet_id, profile_id.as_deref())
+}
+
+pub(crate) fn export_sprite_sheet_internal(
+    state: &AppState,
+    sheet_id: &str,
+    profile_id: Option<&str>,
+) -> CommandResult<EngineExportResult> {
+    let sheet = load_sheet(state, sheet_id)?;
+    let profile = resolve_profile(state, &sheet.project_id, profile_id)?;
     let destination = guarded_destination(&profile)?;
     let engine = engine_of(&profile);
     let slug = slug_of(&sheet.name);
@@ -520,5 +528,95 @@ mod tests {
     fn slug_of_collapses_everything_else() {
         assert_eq!(slug_of("Hero Run!! (v2)"), "hero-run----v2");
         assert_eq!(slug_of("---"), "sprite");
+    }
+
+    #[test]
+    fn exports_godot_files_end_to_end() {
+        use crate::database;
+        use std::{collections::HashMap, sync::Mutex};
+
+        let root = std::env::temp_dir().join(format!("sprite-export-test-{}", uuid::Uuid::new_v4()));
+        let workspace = root.join("workspace");
+        let game_repo = root.join("game-repo").join("assets").join("sprites");
+        std::fs::create_dir_all(workspace.join("exports/sprite-sheets"))
+            .expect("workspace dirs should create");
+        std::fs::create_dir_all(&game_repo).expect("game repo dirs should create");
+        let workspace = workspace.canonicalize().expect("workspace should canonicalize");
+
+        let png_path = workspace.join("exports/sprite-sheets/hero-run.png");
+        std::fs::write(&png_path, b"fake png bytes").expect("png should write");
+        let metadata_path = workspace.join("exports/sprite-sheets/hero-run.json");
+        let metadata = serde_json::json!({
+            "fps": 12.0,
+            "loop": true,
+            "pivot": {"x": 0.5, "y": 1.0},
+            "frames": [
+                {"index": 0, "assetId": "asset-1", "x": 0, "y": 0, "width": 64, "height": 64, "durationMs": 83},
+                {"index": 1, "assetId": "asset-1", "x": 64, "y": 0, "width": 64, "height": 64, "durationMs": 83}
+            ]
+        });
+        std::fs::write(&metadata_path, serde_json::to_vec(&metadata).unwrap())
+            .expect("metadata should write");
+
+        let connection = database::open(&root.join("app.sqlite3")).expect("database should open");
+        connection.execute(
+            "INSERT INTO projects(id,name,path,created_at,last_opened_at) VALUES ('p1','Test',?1,'now','now')",
+            [workspace.to_string_lossy().as_ref()],
+        ).expect("project should insert");
+        connection.execute(
+            "INSERT INTO animations(id,workspace_id,name,fps,looping,frames_json,created_at,updated_at) VALUES ('a1','p1','Hero Run',12,1,'[]','now','now')",
+            [],
+        ).expect("animation should insert");
+        connection.execute(
+            "INSERT INTO sprite_sheets(id,project_id,animation_id,name,layout,frame_width,frame_height,rows,columns,pivot_x,pivot_y,png_path,metadata_path,width,height,frame_count,created_at,updated_at) VALUES ('s1','p1','a1','Hero Run','grid',64,64,1,2,0.5,1.0,?1,?2,128,64,2,'now','now')",
+            [png_path.to_string_lossy().as_ref(), metadata_path.to_string_lossy().as_ref()],
+        ).expect("sheet should insert");
+        let profile = serde_json::json!({
+            "schema": 1,
+            "engine": "godot",
+            "export": {
+                "destination": game_repo.to_string_lossy(),
+                "godotResPrefix": "res://assets/sprites"
+            }
+        });
+        connection.execute(
+            "INSERT INTO game_profiles(id,name,profile_json,created_at,updated_at) VALUES ('gp1','Test Game',?1,'now','now')",
+            [profile.to_string()],
+        ).expect("profile should insert");
+        connection.execute(
+            "INSERT INTO settings(key,value_json,updated_at) VALUES ('game-profile:p1','\"gp1\"','now')",
+            [],
+        ).expect("assignment should insert");
+
+        let state = AppState {
+            db: Mutex::new(connection),
+            cancellers: Mutex::new(HashMap::new()),
+        };
+        let result = export_sprite_sheet_internal(&state, "s1", None)
+            .expect("export should succeed");
+        assert_eq!(result.engine, "godot");
+        assert_eq!(result.files.len(), 3);
+
+        let game_repo = game_repo.canonicalize().expect("destination should canonicalize");
+        assert!(game_repo.join("hero-run.png").is_file());
+        let manifest: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(game_repo.join("hero-run.manifest.json")).expect("manifest should exist"),
+        )
+        .expect("manifest should parse");
+        assert_eq!(manifest["slug"], "hero-run");
+        assert_eq!(manifest["engine"], "godot");
+        assert!(manifest["sockets"].as_array().is_some());
+        let tres = std::fs::read_to_string(game_repo.join("hero-run.tres"))
+            .expect("tres should exist");
+        assert!(tres.contains("res://assets/sprites/hero-run.png"));
+        assert!(tres.contains("Rect2(64, 0, 64, 64)"));
+        assert!(tres.contains("\"speed\": 12"));
+
+        // A profile without a destination fails loudly instead of writing.
+        let missing = export_sprite_sheet_internal(&state, "missing", None)
+            .expect_err("unknown sheet must fail");
+        assert_eq!(missing.code, "sprite_sheet_not_found");
+
+        std::fs::remove_dir_all(root).expect("temporary fixture should be removable");
     }
 }

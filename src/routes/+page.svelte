@@ -641,7 +641,7 @@
 {/if}
 
 {#if projectDialogOpen}<ProjectDialog onCreated={acceptWorkspace} onClose={()=>projectDialogOpen=false} onError={(message)=>notify(message,"error")}/>{/if}
-{#if settingsOpen}<SettingsModal {providers} {defaultProvider} {theme} {workspaceStyle} customStyles={customArts} onDefaultProvider={changeDefaultProvider} onTheme={changeTheme} onWorkspaceStyle={changeWorkspaceStyle} onRefresh={refreshProviders} onSaveImageProvider={saveImageProvider} onDeleteImageProvider={deleteImageProvider} onTestImageProvider={testImageProvider} onClose={()=>settingsOpen=false}/>{/if}
+{#if settingsOpen}<SettingsModal {providers} {defaultProvider} {theme} {workspaceStyle} customStyles={customArts} workspaceId={workspace?.id ?? ""} onDefaultProvider={changeDefaultProvider} onTheme={changeTheme} onWorkspaceStyle={changeWorkspaceStyle} onRefresh={refreshProviders} onSaveImageProvider={saveImageProvider} onDeleteImageProvider={deleteImageProvider} onTestImageProvider={testImageProvider} onClose={()=>settingsOpen=false}/>{/if}
 {#if worktreeDialog}<WorktreeDialog busy={creatingWorktree} onCreate={createWorktree} onClose={()=>worktreeDialog=false}/>{/if}
 {#if viewedAsset}<SpriteViewer asset={viewedAsset} onAnimate={animateViewedAsset} onDownload={exportAssetFromChat} onClose={()=>viewedAsset=undefined}/>{/if}
 {#if motionAsset}<MotionPromptDialog asset={motionAsset} onContinue={(motion,polishMode)=>prepareMotionInChat(motionAsset!,motion,polishMode)} onRig={()=>rigAsset(motionAsset!)} onClose={()=>motionAsset=undefined}/>{/if}
