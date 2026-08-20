@@ -256,11 +256,60 @@ pub fn remove_workspace(id: String, state: State<'_, AppState>) -> CommandResult
 
 #[tauri::command]
 pub fn delete_workspace(id: String, state: State<'_, AppState>) -> CommandResult<()> {
-    let path = workspace_path(&state, &id)?;
+    // Look the path up without workspace_path: initializing here would seed the
+    // .sprite-studio marker into an arbitrary directory right before deleting it.
+    let registered = {
+        let connection = state
+            .db
+            .lock()
+            .map_err(|_| CommandError::new("database_locked", "Database lock was poisoned"))?;
+        let path: Option<String> = connection
+            .query_row(
+                "SELECT path FROM projects WHERE id = ?1",
+                [&id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        path.ok_or_else(|| {
+            CommandError::new("workspace_not_found", "Workspace is no longer registered")
+        })?
+    };
+    let path = normalized_path(&registered, false)?;
     if path.parent().is_none() || path.components().count() < 3 {
         return Err(CommandError::new(
             "unsafe_delete",
             "Refusing to delete a broad filesystem path",
+        ));
+    }
+    if path
+        .parent()
+        .is_none_or(|parent| parent.parent().is_none())
+    {
+        return Err(CommandError::new(
+            "unsafe_delete",
+            "Refusing to delete a root-level directory",
+        ));
+    }
+    let home = std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(PathBuf::from)
+        .and_then(|home| home.canonicalize().ok());
+    if home.as_deref() == Some(path.as_path()) {
+        return Err(CommandError::new(
+            "unsafe_delete",
+            "Refusing to delete the home directory",
+        ));
+    }
+    if !path.join(".sprite-studio").is_dir() {
+        return Err(CommandError::new(
+            "unsafe_delete",
+            "Refusing to delete a directory without a .sprite-studio workspace marker",
+        ));
+    }
+    if path.join(".git").exists() {
+        return Err(CommandError::new(
+            "unsafe_delete",
+            "Refusing to delete a directory that contains a .git repository",
         ));
     }
     std::fs::remove_dir_all(&path)?;

@@ -12,6 +12,22 @@ def fail(message):
     raise SystemExit(f"terrain_cleanup: {message}")
 
 
+def safe_existing(workspace, value):
+    path = (workspace / value).resolve() if not Path(value).is_absolute() else Path(value).resolve()
+    roots = ((workspace / "assets").resolve(), (workspace / ".sprite-studio").resolve())
+    if not path.is_file() or not any(path.is_relative_to(root) for root in roots):
+        fail(f"input must be an existing file under assets/ or .sprite-studio/: {value}")
+    return path
+
+
+def safe_output(workspace, value):
+    path = (workspace / value).resolve() if not Path(value).is_absolute() else Path(value).resolve()
+    roots = ((workspace / "assets").resolve(), (workspace / ".sprite-studio").resolve())
+    if not any(path.is_relative_to(root) for root in roots):
+        fail("output must stay under assets/ or .sprite-studio/")
+    return path
+
+
 def is_magenta(pixel):
     red, green, blue, alpha = pixel
     return alpha > 0 and red > 120 and blue > 120 and green < min(red, blue) * 0.65
@@ -56,9 +72,10 @@ def clean_with_imagemagick(source, destination):
 def main():
     if len(sys.argv) not in (2, 3):
         fail("usage: python3 terrain_cleanup.py INPUT.png [OUTPUT.png]")
-    source = Path(sys.argv[1]).expanduser().resolve()
-    destination = Path(sys.argv[2]).expanduser().resolve() if len(sys.argv) == 3 else source
-    if not source.is_file() or source.suffix.lower() != ".png":
+    workspace = Path.cwd().resolve()
+    source = safe_existing(workspace, sys.argv[1])
+    destination = safe_output(workspace, sys.argv[2]) if len(sys.argv) == 3 else source
+    if source.suffix.lower() != ".png":
         fail("input must be an existing PNG")
     temporary = destination.with_name(f".{destination.name}.terrain-cleanup.tmp.png")
     try:
