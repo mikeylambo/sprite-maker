@@ -182,6 +182,12 @@ fn migrate(connection: &mut Connection) -> CommandResult<()> {
         migrate_v12(&transaction)?;
         transaction.commit()?;
     }
+
+    if version < 13 {
+        let transaction = connection.transaction()?;
+        migrate_v13(&transaction)?;
+        transaction.commit()?;
+    }
     Ok(())
 }
 
@@ -812,6 +818,34 @@ fn migrate_v12(transaction: &Transaction<'_>) -> CommandResult<()> {
     Ok(())
 }
 
+fn migrate_v13(transaction: &Transaction<'_>) -> CommandResult<()> {
+    transaction
+        .execute_batch(
+            r#"
+        CREATE TABLE game_profiles (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          profile_json TEXT NOT NULL DEFAULT '{}',
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+
+        CREATE TABLE asset_production (
+          asset_id TEXT PRIMARY KEY REFERENCES assets(id) ON DELETE CASCADE,
+          sockets_json TEXT NOT NULL DEFAULT '[]',
+          hitboxes_json TEXT NOT NULL DEFAULT '[]',
+          events_json TEXT NOT NULL DEFAULT '[]',
+          tags_json TEXT NOT NULL DEFAULT '[]',
+          updated_at TEXT NOT NULL
+        );
+
+        INSERT INTO migrations(version, applied_at) VALUES (13, datetime('now'));
+        "#,
+        )
+        .map_err(|error| CommandError::new("migration_failed", error.to_string()))?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -856,6 +890,8 @@ mod tests {
             "rigs",
             "settings",
             "provider_settings",
+            "game_profiles",
+            "asset_production",
         ] {
             let exists: i64 = connection
                 .query_row(
@@ -869,7 +905,7 @@ mod tests {
         let migration_version: i64 = connection
             .query_row("SELECT MAX(version) FROM migrations", [], |row| row.get(0))
             .expect("migration version should be recorded");
-        assert_eq!(migration_version, 12);
+        assert_eq!(migration_version, 13);
 
         let archived_column: i64 = connection
             .query_row(

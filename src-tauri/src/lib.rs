@@ -4,10 +4,13 @@ mod backups;
 mod conversations;
 mod database;
 mod error;
+mod exporters;
 mod jobs;
 mod models;
 mod motion_planner;
 mod packs;
+mod production;
+mod profiles;
 mod providers;
 mod quality;
 mod references;
@@ -55,6 +58,14 @@ pub fn run() {
             backups::create_project_backup,
             backups::restore_project_backup,
             backups::import_project_backup,
+            profiles::list_game_profiles,
+            profiles::save_game_profile,
+            profiles::delete_game_profile,
+            profiles::assign_game_profile,
+            profiles::get_workspace_profile,
+            production::get_asset_production,
+            production::set_asset_production,
+            exporters::export_sprite_sheet_to_engine,
             worktrees::list_worktrees,
             worktrees::create_worktree,
             worktrees::update_worktree,
