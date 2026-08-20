@@ -329,10 +329,18 @@ pub fn delete_workspace(id: String, state: State<'_, AppState>) -> CommandResult
         })?
     };
     let path = normalized_path(&registered, false)?;
+    guard_removable_root(&path, "unsafe_delete")?;
+    std::fs::remove_dir_all(&path)?;
+    remove_workspace(id, state)
+}
+
+/// Shared guard for operations that remove or wholesale replace a workspace
+/// directory. Refuses broad, root-level, home, unmarked, and git-repo paths.
+pub(crate) fn guard_removable_root(path: &Path, code: &'static str) -> CommandResult<()> {
     if path.parent().is_none() || path.components().count() < 3 {
         return Err(CommandError::new(
-            "unsafe_delete",
-            "Refusing to delete a broad filesystem path",
+            code,
+            "Refusing to remove a broad filesystem path",
         ));
     }
     if path
@@ -340,34 +348,33 @@ pub fn delete_workspace(id: String, state: State<'_, AppState>) -> CommandResult
         .is_none_or(|parent| parent.parent().is_none())
     {
         return Err(CommandError::new(
-            "unsafe_delete",
-            "Refusing to delete a root-level directory",
+            code,
+            "Refusing to remove a root-level directory",
         ));
     }
     let home = std::env::var_os("HOME")
         .or_else(|| std::env::var_os("USERPROFILE"))
         .map(PathBuf::from)
         .and_then(|home| home.canonicalize().ok());
-    if home.as_deref() == Some(path.as_path()) {
+    if home.as_deref() == Some(path) {
         return Err(CommandError::new(
-            "unsafe_delete",
-            "Refusing to delete the home directory",
+            code,
+            "Refusing to remove the home directory",
         ));
     }
     if !path.join(".sprite-studio").is_dir() {
         return Err(CommandError::new(
-            "unsafe_delete",
-            "Refusing to delete a directory without a .sprite-studio workspace marker",
+            code,
+            "Refusing to remove a directory without a .sprite-studio workspace marker",
         ));
     }
     if path.join(".git").exists() {
         return Err(CommandError::new(
-            "unsafe_delete",
-            "Refusing to delete a directory that contains a .git repository",
+            code,
+            "Refusing to remove a directory that contains a .git repository",
         ));
     }
-    std::fs::remove_dir_all(&path)?;
-    remove_workspace(id, state)
+    Ok(())
 }
 
 #[cfg(test)]

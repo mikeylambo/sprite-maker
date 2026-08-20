@@ -1313,6 +1313,15 @@ async fn generate_external_source(
                 )
             })?
     } else if let Some(url) = item.url {
+        if !url
+            .get(..8)
+            .is_some_and(|prefix| prefix.eq_ignore_ascii_case("https://"))
+        {
+            return Err(CommandError::new(
+                "provider_error",
+                format!("{} returned a non-HTTPS image URL", provider.name),
+            ));
+        }
         client
             .get(url)
             .send()

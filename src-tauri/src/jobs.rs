@@ -1754,25 +1754,44 @@ pub fn queue_procedural_vfx(
 
 #[tauri::command]
 pub fn delete_sprite_sheet(id: String, state: State<'_, AppState>) -> CommandResult<()> {
-    let paths: Option<(String, String)> = {
+    let paths: Option<(String, String, String)> = {
         let connection = state
             .db
             .lock()
             .map_err(|_| CommandError::new("database_locked", "Database lock was poisoned"))?;
         connection
             .query_row(
-                "SELECT png_path, metadata_path FROM sprite_sheets WHERE id=?1",
+                "SELECT project_id, png_path, metadata_path FROM sprite_sheets WHERE id=?1",
                 [&id],
-                |row| Ok((row.get(0)?, row.get(1)?)),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
             )
             .optional()?
     };
-    let Some((png_path, metadata_path)) = paths else {
+    let Some((project_id, png_path, metadata_path)) = paths else {
         return Err(CommandError::new(
             "sprite_sheet_not_found",
             "The sprite sheet no longer exists",
         ));
     };
+    // Delete only files that provably live inside the sheet's own workspace;
+    // stored paths are data, not proof.
+    let root = workspace_path(&state, &project_id).ok();
+    let mut removable = Vec::new();
+    for path in [PathBuf::from(&png_path), PathBuf::from(&metadata_path)] {
+        if !path.is_file() {
+            continue;
+        }
+        let canonical = path.canonicalize()?;
+        match &root {
+            Some(root) if canonical.starts_with(root) => removable.push(canonical),
+            _ => {
+                return Err(CommandError::new(
+                    "unsafe_delete",
+                    "Refusing to delete a sprite sheet file outside its workspace",
+                ));
+            }
+        }
+    }
     {
         let connection = state
             .db
@@ -1780,10 +1799,8 @@ pub fn delete_sprite_sheet(id: String, state: State<'_, AppState>) -> CommandRes
             .map_err(|_| CommandError::new("database_locked", "Database lock was poisoned"))?;
         connection.execute("DELETE FROM sprite_sheets WHERE id=?1", [&id])?;
     }
-    for path in [PathBuf::from(png_path), PathBuf::from(metadata_path)] {
-        if path.is_file() {
-            std::fs::remove_file(path)?;
-        }
+    for path in removable {
+        std::fs::remove_file(path)?;
     }
     Ok(())
 }

@@ -219,6 +219,15 @@ fn read_manifest(backup_path: &Path) -> CommandResult<ProjectBackup> {
             "This is not a complete Sprite Studio project backup",
         ));
     }
+    // source_path becomes a prefix filter for path rewrites during restore and
+    // import; a broad prefix from a tampered manifest must never reach SQL.
+    let source_path = Path::new(&manifest.source_path);
+    if !source_path.is_absolute() || source_path.components().count() < 3 {
+        return Err(CommandError::new(
+            "invalid_backup",
+            "Backup manifest names an unusable source path",
+        ));
+    }
     Ok(manifest)
 }
 
@@ -270,17 +279,24 @@ fn copy_project_rows(
         "INSERT OR REPLACE INTO settings SELECT * FROM project_backup.settings s WHERE s.key IN ('workspace-style:'||?1,'active-worktree:'||?1) OR EXISTS (SELECT 1 FROM project_backup.conversations c WHERE c.workspace_id=?1 AND s.key LIKE '%:'||c.id)",
         [project_id],
     )?;
-    for (table, column) in [
-        ("assets", "path"),
-        ("asset_versions", "path"),
-        ("reference_images", "path"),
-        ("background_jobs", "result_path"),
-        ("sprite_sheets", "png_path"),
-        ("sprite_sheets", "metadata_path"),
+    // Scope every rewrite to the restored project: old_root comes from the
+    // backup manifest, and an unscoped prefix match would let a tampered
+    // manifest rewrite path rows belonging to every other project.
+    for (table, column, scope) in [
+        ("assets", "path", "workspace_id=?3"),
+        (
+            "asset_versions",
+            "path",
+            "asset_id IN (SELECT id FROM assets WHERE workspace_id=?3)",
+        ),
+        ("reference_images", "path", "project_id=?3"),
+        ("background_jobs", "result_path", "project_id=?3"),
+        ("sprite_sheets", "png_path", "project_id=?3"),
+        ("sprite_sheets", "metadata_path", "project_id=?3"),
     ] {
         transaction.execute(
-            &format!("UPDATE {table} SET {column}=?2||substr({column},length(?1)+1) WHERE {column} IS NOT NULL AND {column} LIKE ?1||'%'"),
-            params![old_root, new_root],
+            &format!("UPDATE {table} SET {column}=?2||substr({column},length(?1)+1) WHERE {scope} AND {column} IS NOT NULL AND {column} LIKE ?1||'%'"),
+            params![old_root, new_root, project_id],
         )?;
     }
     let inserted: bool = transaction.query_row(
@@ -390,12 +406,7 @@ fn restore_project_backup_internal(
     state: &AppState,
 ) -> CommandResult<Workspace> {
     let root = workspace_path(state, project_id)?;
-    if root.parent().is_none() || root.components().count() < 3 {
-        return Err(CommandError::new(
-            "unsafe_restore",
-            "Refusing to replace a broad filesystem path",
-        ));
-    }
+    crate::workspace::guard_removable_root(&root, "unsafe_restore")?;
     let backup_path = backup_path.canonicalize()?;
     let manifest = read_manifest(&backup_path)?;
     if manifest.project_id != project_id {
