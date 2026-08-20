@@ -1,5 +1,60 @@
 # Changelog
 
+## Unreleased
+
+## 0.3.2 — 2026-08-19
+
+### Animation reliability
+
+- Fixed deictic animation requests such as “animate this” so the selected asset's identity determines the correct creature or character harness, even when an older asset is stored in the wrong category folder.
+- Prevented restored or unchanged generation manifests from attaching stale artwork to a new completed message.
+- Treated provider-reported generation failures as failures instead of completed sprite cards, while preserving the best valid multi-frame result when only a visual warning remains.
+- Rejected single-frame fallbacks as completed animations and used the renderer manifest's actual frame rate for accepted animation previews.
+- Updated creature animation guidance to make one motion-ready source repair, then publish the best connected multi-frame attempt with a concise warning when needed.
+
+## 0.3.1 — 2026-08-19
+
+### Terrain and project recovery
+
+- Added safe project backup, restore, and import workflows that preserve rigs and current project data.
+- Added archived-chat recovery, asset-version restoration, Terrain Studio, canonical terrain-mask generation, and Godot 4 TileSet export.
+- Removed terrain generation's dependency on legacy worktree types so the current request determines the correct asset category and output folder.
+- Made Terrain and VFX tools available from every project section and added a production-ready desert terrain atlas.
+
+### Distribution
+
+- Restored tag-triggered GitHub release builds for Windows and Linux while keeping costly macOS builds off GitHub-hosted runners.
+- Added local universal macOS build and upload commands covering both Apple Silicon and Intel Macs.
+- Fixed the local universal macOS command so Tauri combines the two supported Rust architecture builds correctly.
+
+## 0.3.0 — 2026-08-17
+
+### Community providers
+
+- Added polished provider, Custom API, and image-provider settings with actionable installation and authentication status.
+- Added real streamed Claude Code, Gemini CLI, and Grok CLI adapters alongside the existing Codex integration, including cancellation and clear terminal errors.
+- Added configurable OpenAI-compatible endpoints and Grok image credentials without exposing API keys in logs or the interface.
+- Added official provider artwork and model switching directly in chat and recent-conversation rows.
+
+### Faster, simpler projects
+
+- Reworked project and chat loading so expanding a project no longer blocks on repeated database reads.
+- Restored completed generated assets immediately without requiring an application restart.
+- Made revisions version-aware so users can continue refining a sprite in the same project and chat; a fresh worktree is no longer required for each change.
+- Removed provider discovery's dependence on the visible Codex application name, restoring compatibility with the current ChatGPT/Codex CLI installation.
+
+### Rigging and animation quality
+
+- Added a native point-and-bone rig editor with anatomy templates, AI point suggestions, deterministic rendering, and planted-contact IK.
+- Added silent visual acceptance with one automatic repair attempt before a result is published.
+- Added hard locomotion gates for rigid-body runs, repeated or near-static poses, missing flight phases, limb identity, wing attachment, quadruped limb range, and extended-versus-gathered gallop silhouettes.
+- Changed the default generation canvas to 128×128 while preserving user-defined custom dimensions.
+
+### Distribution
+
+- Replaced the paid four-platform GitHub Actions release build with maintainer-built, locally verified release assets uploaded directly to GitHub.
+- Releases now publish native installers and executables directly instead of ZIP wrappers.
+
 ## 0.2.3 — 2026-08-10
 
 ### Asset packs
