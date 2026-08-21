@@ -101,6 +101,21 @@ export type AssetProduction = { sockets: SocketPoint[]; hitboxes: HitRegion[]; e
 
 export type EngineExportResult = { engine: string; destination: string; files: string[] };
 
+export type IdentityImageKind = "canonical" | "silhouette" | "portrait" | "reference";
+export type IdentityImage = { id: string; identityId: string; path: string; kind: IdentityImageKind; label: string; createdAt: string };
+export type Identity = {
+  id: string; name: string; summary: string; proportions: string; scalePx?: number;
+  palette: string[]; forbidden: string[]; vocabulary: string[]; tags: string[];
+  images: IdentityImage[]; createdAt: string; updatedAt: string;
+};
+export type IdentityInput = {
+  id?: string; name: string; summary?: string; proportions?: string; scalePx?: number;
+  palette?: string[]; forbidden?: string[]; vocabulary?: string[]; tags?: string[];
+};
+export const IDENTITY_IMAGE_KINDS: IdentityImageKind[] = ["canonical", "silhouette", "portrait", "reference"];
+
+export type PreparedAsset = { asset: Asset; production: AssetProduction; notes: string[] };
+
 export type StudioError = { code: string; message: string };
 
 export function errorMessage(error: unknown): string {

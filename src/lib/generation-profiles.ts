@@ -1,4 +1,4 @@
-import type { ChatGenerationProfile, GenerationQuality, ProviderMode, SpriteSlashCommand } from "$lib/types";
+import type { ChatGenerationProfile, GameProfileDoc, GenerationQuality, ProviderMode, SpriteSlashCommand } from "$lib/types";
 
 export const GENERATION_PRESETS: Record<Exclude<GenerationQuality, "custom">, Pick<ChatGenerationProfile, "width" | "height" | "frames" | "fps" | "minFrames" | "maxFrames">> = {
   low: { width: 64, height: 64, frames: 6, fps: 8, minFrames: 6, maxFrames: 8 },
@@ -54,6 +54,24 @@ export function normalizeGenerationProfile(value: unknown, modes: ProviderMode[]
     reasoningEffort,
     imageProviderId: String(source.imageProviderId ?? "imagegen"),
   };
+}
+
+/** Seed a new chat's generation settings from the project's game profile, so
+ *  canvas size and playback match the target game before anything is made. */
+export function profileFromGame(game: GameProfileDoc | undefined, modes: ProviderMode[] = []): ChatGenerationProfile {
+  const base = normalizeGenerationProfile(null, modes);
+  if (!game) return base;
+  const unit = Number(game.baseUnitPx);
+  const fps = Number(game.fps?.default);
+  const sized = Number.isFinite(unit) && unit >= 8 && unit <= 512;
+  const timed = Number.isFinite(fps) && fps >= 1 && fps <= 60;
+  if (!sized && !timed) return base;
+  return normalizeGenerationProfile({
+    ...base,
+    quality: "custom",
+    ...(sized ? { width: unit, height: unit } : {}),
+    ...(timed ? { fps } : {}),
+  }, modes);
 }
 
 export function slashCommand(prompt: string): SpriteSlashCommand | undefined {

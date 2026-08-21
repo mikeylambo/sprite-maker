@@ -27,11 +27,12 @@
   import WorktreeDialog from "$lib/components/WorktreeDialog.svelte";
   import LogoMark from "$lib/components/LogoMark.svelte";
   import { api } from "$lib/api";
-  import { normalizeGenerationProfile, slashCommand } from "$lib/generation-profiles";
+  import { normalizeGenerationProfile, profileFromGame, slashCommand } from "$lib/generation-profiles";
+  import CastLibrary from "$lib/components/CastLibrary.svelte";
   import { buildSpriteGroups, type SpriteGroup } from "$lib/sprite-groups";
   import { parseConversationStyle, parseStylePreset, stylePreset, type ConversationStyleId, type StylePresetId } from "$lib/style-presets";
   import { parseCustomArts, parseCustomSkills, type CustomArtStyle, type CustomSkill } from "$lib/library-types";
-  import { errorMessage, type Animation, type AnimationPolishMode, type AnimationTemplate, type Asset, type AssetPack, type ChatGenerationProfile, type Conversation, type ImageProviderInput, type Message, type PackGenerationMetadata, type ProviderEvent, type ProviderRequestOptions, type ProviderStatus, type ReferenceCategory, type ReferenceImage, type Rig, type SidebarSnapshot, type SpriteGenerationMetadata, type SpriteSlashCommand, type TemplateApplication, type Workspace, type Worktree, type WorktreeKind } from "$lib/types";
+  import { errorMessage, type Animation, type AnimationPolishMode, type AnimationTemplate, type Asset, type AssetPack, type ChatGenerationProfile, type Conversation, type GameProfile, type Identity, type ImageProviderInput, type Message, type PackGenerationMetadata, type ProviderEvent, type ProviderRequestOptions, type ProviderStatus, type ReferenceCategory, type ReferenceImage, type Rig, type SidebarSnapshot, type SpriteGenerationMetadata, type SpriteSlashCommand, type TemplateApplication, type Workspace, type Worktree, type WorktreeKind } from "$lib/types";
 
   type ActiveChatRequest = { id:string; conversationId:string; workspaceId:string; worktreeId?:string; prompt:string; command?:SpriteSlashCommand; generation:ProviderRequestOptions["generation"]; knownPackIds:string[]; previousGenerationFingerprint?:string; startedAt:number };
 
@@ -81,6 +82,8 @@
   let chatDraft = $state("");
   let customSkills = $state<CustomSkill[]>([]);
   let customArts = $state<CustomArtStyle[]>([]);
+  let identities = $state<Identity[]>([]);
+  let gameProfile = $state<GameProfile|null>(null);
   let toastTimer: number | undefined;
   let conversationSelection = 0;
   let workspaceSelection = 0;
@@ -134,6 +137,10 @@
       loadStage="saving the active project";
       await api.setSetting("activeWorkspaceId",workspace.id);
       loadStage="loading project assets and tools";
+      // The game profile drives generation defaults and export, and the cast
+      // is app-wide; neither should block the shell if it fails.
+      void api.getWorkspaceProfile(workspace.id).then(value=>{if(selection===workspaceSelection)gameProfile=value;}).catch(()=>{});
+      void api.listIdentities().then(value=>{if(selection===workspaceSelection)identities=value;}).catch(()=>{});
       // One snapshot carries projects, worktrees, and chats from a single
       // database read; the per-worktree chat list is derived locally from it.
       const [scan,snapshot]=await Promise.all([
@@ -177,7 +184,7 @@
         conversationStyle=nextStyle;
         generationProfile=nextProfile;
       }else{
-        messages=[];activeReferenceIds=[];conversationStyle="inherit";generationProfile=normalizeGenerationProfile(null);
+        messages=[];activeReferenceIds=[];conversationStyle="inherit";generationProfile=profileFromGame(gameProfile?.profile);
       }
       activeReferenceIds=await loadConversationFocus(selectedConversation,references,activeReferenceIds);
       await hydrateLatestGeneration().catch(error=>notify(`Project opened, but the latest chat preview could not be restored: ${errorMessage(error)}`,"error"));
@@ -213,7 +220,7 @@
   }
   async function acceptWorkspace(value:Workspace){await loadWorkspace(value);}
   async function goHome(){workspace=undefined;worktrees=[];selectedWorktree=undefined;worktreeAssetIds=[];references=[];activeReferenceIds=[];focusedReferenceId=undefined;animationTemplates=[];packs=[];packFilter="";conversations=[];sidebarConversations=[];selectedConversation=undefined;messages=[];generationProfile=normalizeGenerationProfile(null);rigs=[];selectedRigId=undefined;rigDraftAssetId=undefined;await api.setSetting("activeWorkspaceId",null);await loadWorkspaces();}
-  async function chooseWorktree(value:Worktree){selectedWorktree=value;selectedAsset=undefined;packFilter="";activeTab="chat";if(!workspace)return;[worktreeAssetIds,animations,rigs,references]=await Promise.all([api.listWorktreeAssetIds(value.id),api.listAnimations(workspace.id,value.id),api.listRigs(workspace.id,value.id),api.listReferenceImages(value.id)]);conversations=chatsForWorktree(sidebarConversations,value);selectedAnimation=animations[0];selectedRigId=rigs[0]?.id;selectedConversation=conversations[0];if(selectedConversation){await chooseConversation(selectedConversation);}else{messages=[];activeReferenceIds=[];focusedReferenceId=undefined;conversationStyle="inherit";generationProfile=normalizeGenerationProfile(null);}await api.setSetting(`active-worktree:${workspace.id}`,value.id);}
+  async function chooseWorktree(value:Worktree){selectedWorktree=value;selectedAsset=undefined;packFilter="";activeTab="chat";if(!workspace)return;[worktreeAssetIds,animations,rigs,references]=await Promise.all([api.listWorktreeAssetIds(value.id),api.listAnimations(workspace.id,value.id),api.listRigs(workspace.id,value.id),api.listReferenceImages(value.id)]);conversations=chatsForWorktree(sidebarConversations,value);selectedAnimation=animations[0];selectedRigId=rigs[0]?.id;selectedConversation=conversations[0];if(selectedConversation){await chooseConversation(selectedConversation);}else{messages=[];activeReferenceIds=[];focusedReferenceId=undefined;conversationStyle="inherit";generationProfile=profileFromGame(gameProfile?.profile);}await api.setSetting(`active-worktree:${workspace.id}`,value.id);}
   async function createWorktree(name:string,kind:WorktreeKind,description?:string){if(!workspace)return;creatingWorktree=true;try{const created=await api.createWorktree(workspace.id,name,kind,description);worktrees=await api.listWorktrees(workspace.id);await chooseWorktree(created);if(!conversations.length)await newConversation();worktreeDialog=false;notify(`${created.name} worktree created — its first chat is ready`);}catch(error){notify(errorMessage(error),"error");}finally{creatingWorktree=false;}}
   async function newConversation(worktree=selectedWorktree){if(!workspace){projectDialogOpen=true;return;}if(!worktree)return;try{if(selectedWorktree?.id!==worktree.id)await chooseWorktree(worktree);selectedAsset=undefined;viewedAsset=undefined;activeReferenceIds=[];focusedReferenceId=undefined;const conversation=await api.createConversation(workspace.id,worktree.id,undefined,defaultProvider);conversations=[conversation,...conversations];sidebarConversations=[conversation,...sidebarConversations];await chooseConversation(conversation);}catch(error){notify(errorMessage(error),"error");}}
   async function chooseConversation(conversation:Conversation){
@@ -262,7 +269,12 @@
   async function listArchivedChats(){if(!workspace)return [];try{return await api.listArchivedConversations(workspace.id);}catch(error){notify(errorMessage(error),"error");return [];}}
   async function restoreArchivedChat(conversation:Conversation){try{const restored=await api.restoreConversation(conversation.id);sidebarConversations=[restored,...sidebarConversations.filter(item=>item.id!==restored.id)];conversations=chatsForWorktree(sidebarConversations,selectedWorktree);await chooseConversation(restored);notify("Chat restored");}catch(error){notify(errorMessage(error),"error");throw error;}}
   function providerFor(conversation:Conversation){return providers.find(provider=>provider.id===conversation.provider);}
-  async function loadGenerationProfile(conversation:Conversation){return normalizeGenerationProfile(await api.getSetting(`conversation-generation:${conversation.id}`),providerFor(conversation)?.modes??[]);}
+  async function loadGenerationProfile(conversation:Conversation){
+    const stored=await api.getSetting(`conversation-generation:${conversation.id}`);
+    const modes=providerFor(conversation)?.modes??[];
+    // A chat with no saved settings inherits the game's canvas and playback.
+    return stored?normalizeGenerationProfile(stored,modes):profileFromGame(gameProfile?.profile,modes);
+  }
   function composerReferenceCategory():ReferenceCategory{return activeTab==="vfx"?"vfx":"other";}
   function referenceSlots(){const maximum=currentProvider?.capabilities.maximumReferenceImages??0;return maximum>0?Math.max(0,maximum-activeReferenceIds.length):0;}
   async function activateImportedReferences(created:ReferenceImage[]){
@@ -466,7 +478,7 @@
     } catch(error){notify(errorMessage(error),"error");}
   }
   function selectTab(value:string){activeTab=value;}
-  function selectPrimary(value:"chat"|"media"|"skills"|"arts"){
+  function selectPrimary(value:"chat"|"media"|"skills"|"arts"|"cast"){
     if(value==="chat"){activeTab="chat";return;}
     if(value==="media"){activeTab=mediaTabs.includes(activeTab)?activeTab:"sprites";return;}
     activeTab=value;
@@ -523,6 +535,7 @@
   }
   function updateAsset(asset:Asset){selectedAsset=asset;assets=assets.map(item=>item.id===asset.id?asset:item);}
   async function assetDeleted(){selectedAsset=undefined;if(workspace)assets=await api.scanAssets(workspace.id);}
+  async function assetPrepared(prepared:Asset){if(workspace)assets=await api.listAssets(workspace.id);selectedAsset=assets.find(item=>item.id===prepared.id)??prepared;}
   function applyTheme(value:string){theme=value;document.documentElement.dataset.theme=value;}
   async function changeTheme(value:string){applyTheme(value);try{await api.setSetting("theme",value);}catch(error){notify(errorMessage(error),"error");}}
   async function changeWorkspaceStyle(value:StylePresetId){if(!workspace){notify("Open a project before choosing its art direction","error");return;}workspaceStyle=value;try{await api.setSetting(`workspace-style:${workspace.id}`,value);notify(`${stylePreset(value,customArts).name} is now the project art direction`);}catch(error){notify(errorMessage(error),"error");}}
@@ -616,7 +629,8 @@
     <ProjectSidebar {workspaces} {workspace} {worktrees} conversations={sidebarConversations} selectedWorktreeId={selectedWorktree?.id} selectedConversationId={selectedConversation?.id} {runningConversationIds} activeView={activePrimary} onView={selectPrimary} onProject={loadWorkspace} onAddProject={()=>projectDialogOpen=true} onConversation={chooseConversation} onNewConversation={newConversation} onRenameConversation={renameChat} onArchiveConversation={archiveChat} onListArchivedConversations={listArchivedChats} onRestoreConversation={restoreArchivedChat} onSettings={()=>settingsOpen=true} onManageProject={()=>{if(workspace){renameValue=workspace.name;workspaceMenu=true;}}}/>
     <section class="main-pane">
       <div class="tab-stack">
-        {#if activeTab==="skills"}<SkillsLibrary skills={customSkills} onChange={saveCustomSkills}/>
+        {#if activeTab==="cast"}<CastLibrary {identities} onChange={(value)=>identities=value} onError={(message)=>notify(message,"error")} onNotice={(message)=>notify(message)} onUseBrief={(brief)=>{chatDraft=brief;activeTab="chat";}}/>
+        {:else if activeTab==="skills"}<SkillsLibrary skills={customSkills} onChange={saveCustomSkills}/>
         {:else if activeTab==="arts"}<ArtsLibrary arts={customArts} selected={workspaceStyle} onChange={saveCustomArts} onSelect={changeWorkspaceStyle}/>
         {:else if !workspace}<NoProjectView onAdd={()=>projectDialogOpen=true}/>
         {:else if activeTab==="chat"}
@@ -636,7 +650,7 @@
         {/if}
       </div>
     </section>
-    {#if selectedAsset && activeTab==="sprites"}<AssetInspector asset={selectedAsset} {animations} onClose={()=>selectedAsset=undefined} onChanged={updateAsset} onDeleted={assetDeleted} onError={(message)=>notify(message,"error")}/>{/if}
+    {#if selectedAsset && activeTab==="sprites"}<AssetInspector asset={selectedAsset} {animations} {identities} onClose={()=>selectedAsset=undefined} onChanged={updateAsset} onDeleted={assetDeleted} onError={(message)=>notify(message,"error")} onNotice={(message)=>notify(message)} onPrepared={assetPrepared} onIdentities={(value)=>identities=value}/>{/if}
   </main>
 {/if}
 

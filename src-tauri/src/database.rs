@@ -188,6 +188,12 @@ fn migrate(connection: &mut Connection) -> CommandResult<()> {
         migrate_v13(&transaction)?;
         transaction.commit()?;
     }
+
+    if version < 14 {
+        let transaction = connection.transaction()?;
+        migrate_v14(&transaction)?;
+        transaction.commit()?;
+    }
     Ok(())
 }
 
@@ -846,6 +852,41 @@ fn migrate_v13(transaction: &Transaction<'_>) -> CommandResult<()> {
     Ok(())
 }
 
+fn migrate_v14(transaction: &Transaction<'_>) -> CommandResult<()> {
+    transaction
+        .execute_batch(
+            r#"
+        CREATE TABLE identities (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          summary TEXT NOT NULL DEFAULT '',
+          proportions TEXT NOT NULL DEFAULT '',
+          scale_px INTEGER,
+          palette_json TEXT NOT NULL DEFAULT '[]',
+          forbidden_json TEXT NOT NULL DEFAULT '[]',
+          vocabulary_json TEXT NOT NULL DEFAULT '[]',
+          tags_json TEXT NOT NULL DEFAULT '[]',
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+
+        CREATE TABLE identity_images (
+          id TEXT PRIMARY KEY,
+          identity_id TEXT NOT NULL REFERENCES identities(id) ON DELETE CASCADE,
+          path TEXT NOT NULL,
+          kind TEXT NOT NULL DEFAULT 'canonical',
+          label TEXT NOT NULL DEFAULT '',
+          created_at TEXT NOT NULL
+        );
+        CREATE INDEX idx_identity_images_identity ON identity_images(identity_id, created_at);
+
+        INSERT INTO migrations(version, applied_at) VALUES (14, datetime('now'));
+        "#,
+        )
+        .map_err(|error| CommandError::new("migration_failed", error.to_string()))?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -892,6 +933,8 @@ mod tests {
             "provider_settings",
             "game_profiles",
             "asset_production",
+            "identities",
+            "identity_images",
         ] {
             let exists: i64 = connection
                 .query_row(
@@ -905,7 +948,7 @@ mod tests {
         let migration_version: i64 = connection
             .query_row("SELECT MAX(version) FROM migrations", [], |row| row.get(0))
             .expect("migration version should be recorded");
-        assert_eq!(migration_version, 13);
+        assert_eq!(migration_version, 14);
 
         let archived_column: i64 = connection
             .query_row(

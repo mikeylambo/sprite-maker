@@ -5,6 +5,8 @@ mod conversations;
 mod database;
 mod error;
 mod exporters;
+mod identities;
+mod intake;
 mod jobs;
 mod models;
 mod motion_planner;
@@ -66,6 +68,13 @@ pub fn run() {
             production::get_asset_production,
             production::set_asset_production,
             exporters::export_sprite_sheet_to_engine,
+            intake::prepare_asset_for_rigging,
+            identities::list_identities,
+            identities::save_identity,
+            identities::delete_identity,
+            identities::add_identity_image_from_asset,
+            identities::delete_identity_image,
+            identities::get_identity_brief,
             worktrees::list_worktrees,
             worktrees::create_worktree,
             worktrees::update_worktree,

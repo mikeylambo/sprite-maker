@@ -1,5 +1,5 @@
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
-import type { Animation, AnimationInput, AnimationTemplate, Asset, AssetPack, AssetProduction, AssetVersion, BackgroundJob, Conversation, EngineExportResult, ExportResult, FrameOptimizationResult, GameProfile, GameProfileDoc, GenerationManifest, ImageProviderInput, Message, MotionPlan, ProceduralVfxInput, ProjectBackup, ProviderConnectionTest, ProviderRequestOptions, ProviderStatus, QualityReport, ReferenceCategory, ReferenceImage, RigFitReport, RigInput, RigRenderResult, RigSuggestion, Rig, SidebarSnapshot, SpriteSheet, SpriteSheetInput, TemplateApplication, TerrainExportInput, TerrainExportResult, VfxEffect, Workspace, Worktree, WorktreeKind } from "$lib/types";
+import type { Animation, AnimationInput, AnimationTemplate, Asset, AssetPack, AssetProduction, AssetVersion, BackgroundJob, Conversation, EngineExportResult, ExportResult, FrameOptimizationResult, GameProfile, GameProfileDoc, GenerationManifest, Identity, IdentityImageKind, IdentityInput, ImageProviderInput, Message, MotionPlan, PreparedAsset, ProceduralVfxInput, ProjectBackup, ProviderConnectionTest, ProviderRequestOptions, ProviderStatus, QualityReport, ReferenceCategory, ReferenceImage, RigFitReport, RigInput, RigRenderResult, RigSuggestion, Rig, SidebarSnapshot, SpriteSheet, SpriteSheetInput, TemplateApplication, TerrainExportInput, TerrainExportResult, VfxEffect, Workspace, Worktree, WorktreeKind } from "$lib/types";
 
 export const api = {
   listWorkspaces: () => invoke<Workspace[]>("list_workspaces"),
@@ -94,6 +94,13 @@ export const api = {
   getAssetProduction: (assetId: string) => invoke<AssetProduction>("get_asset_production", { assetId }),
   setAssetProduction: (assetId: string, production: AssetProduction) => invoke<AssetProduction>("set_asset_production", { assetId, production }),
   exportSpriteSheetToEngine: (sheetId: string, profileId?: string) => invoke<EngineExportResult>("export_sprite_sheet_to_engine", { sheetId, profileId: profileId ?? null }),
+  prepareAssetForRigging: (assetId: string) => invoke<PreparedAsset>("prepare_asset_for_rigging", { assetId }),
+  listIdentities: () => invoke<Identity[]>("list_identities"),
+  saveIdentity: (input: IdentityInput) => invoke<Identity>("save_identity", { input }),
+  deleteIdentity: (id: string) => invoke<void>("delete_identity", { id }),
+  addIdentityImageFromAsset: (identityId: string, assetId: string, kind: IdentityImageKind, label = "") => invoke<Identity>("add_identity_image_from_asset", { identityId, assetId, kind, label }),
+  deleteIdentityImage: (id: string) => invoke<Identity | null>("delete_identity_image", { id }),
+  getIdentityBrief: (id: string) => invoke<string>("get_identity_brief", { id }),
 };
 
 export const assetUrl = (path: string) => convertFileSrc(path);

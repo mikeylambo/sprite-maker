@@ -2,11 +2,25 @@
   import { X, ExternalLink, Trash2, Pencil, Check, Image as ImageIcon, Layers3 } from "lucide-svelte";
   import { revealItemInDir } from "@tauri-apps/plugin-opener";
   import { api, assetUrl } from "$lib/api";
-  import { errorMessage, type Animation, type Asset, type AssetVersion } from "$lib/types";
+  import ProductionEditor from "$lib/components/ProductionEditor.svelte";
+  import { errorMessage, type Animation, type Asset, type AssetVersion, type Identity } from "$lib/types";
 
-  let { asset, animations, onClose, onChanged, onDeleted, onError }: {
-    asset: Asset; animations: Animation[]; onClose: () => void; onChanged: (asset: Asset) => void; onDeleted: () => void; onError: (message: string) => void;
+  let { asset, animations, identities = [], onClose, onChanged, onDeleted, onError, onNotice, onPrepared, onIdentities }: {
+    asset: Asset; animations: Animation[]; identities?: Identity[]; onClose: () => void; onChanged: (asset: Asset) => void; onDeleted: () => void;
+    onError: (message: string) => void; onNotice: (message: string) => void; onPrepared: (asset: Asset) => void | Promise<void>;
+    onIdentities: (identities: Identity[]) => void;
   } = $props();
+  let linkingIdentity = $state(false);
+
+  async function addToIdentity(identityId: string) {
+    if (!identityId) return;
+    linkingIdentity = true;
+    try {
+      await api.addIdentityImageFromAsset(identityId, asset.id, "canonical");
+      onIdentities(await api.listIdentities());
+      onNotice("Added to the identity's canonical references");
+    } catch (error) { onError(errorMessage(error)); } finally { linkingIdentity = false; }
+  }
   let editing = $state(false);
   let name = $state("");
   let busy = $state(false);
@@ -42,6 +56,8 @@
     </section>
     <section><h3>FILE</h3><dl><div><dt>Dimensions</dt><dd>{asset.width} × {asset.height} px</dd></div><div><dt>Format</dt><dd>{asset.format.toUpperCase()}</dd></div><div><dt>Size</dt><dd>{formatBytes(asset.fileSize)}</dd></div><div><dt>Transparency</dt><dd>{asset.hasAlpha ? "Alpha channel" : "Opaque"}</dd></div></dl></section>
     <section><h3>LOCATION</h3><p class="path">{asset.relativePath}</p><button class="wide" onclick={() => revealItemInDir(asset.path)}><ExternalLink size={12} /> Reveal on disk</button></section>
+    <section><ProductionEditor {asset} {onError} {onNotice} {onPrepared}/></section>
+    <section><h3>IDENTITY</h3>{#if identities.length}<select aria-label="Add to identity" disabled={linkingIdentity} onchange={(event) => { addToIdentity(event.currentTarget.value); event.currentTarget.value = ""; }}><option value="">Add as canonical to…</option>{#each identities as identity}<option value={identity.id}>{identity.name}</option>{/each}</select>{:else}<p class="muted">Create an identity in the Cast library to pin this character's canonical look.</p>{/if}</section>
     <section><h3>ANIMATIONS</h3>{#if usedBy.length}<div class="used-list">{#each usedBy as animation}<div><Layers3 size={12} /><span>{animation.name}</span><small>{animation.frames.filter(frame => frame.assetId === asset.id).length} frame(s)</small></div>{/each}</div>{:else}<p class="muted">This image is not used by an animation.</p>{/if}</section>
     <section><h3>VERSIONS</h3>{#if versions.length}<div class="version-list">{#each versions as version}<div class:selected={version.selected}><span>v{version.versionNumber}</span><strong>{version.changeKind}</strong><small>{version.available ? new Date(version.createdAt).toLocaleString() : "Metadata only"}</small></div>{/each}</div>{:else}<p class="muted">No indexed versions yet.</p>{/if}</section>
     <section class="danger"><button onclick={remove} disabled={busy}><Trash2 size={12} /> Delete asset</button></section>
@@ -49,6 +65,7 @@
 </aside>
 
 <style>
+  section select{width:100%;height:27px;border:1px solid var(--border);border-radius:5px;background:var(--bg);color:var(--text);font:inherit;font-size:11px;padding:0 6px}
   .inspector{width:264px;min-width:264px;height:100%;border-left:1px solid var(--border);background:var(--sidebar);display:flex;flex-direction:column}.inspector>header{height:49px;box-sizing:border-box;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 10px 0 13px;font-size:12px;color:var(--muted)}header>div{display:flex;gap:7px;align-items:center}header button,.name-row button{border:0;background:transparent;color:var(--faint);width:26px;height:26px;display:grid;place-items:center;border-radius:4px;cursor:pointer}header button:hover,.name-row button:hover{background:var(--surface-hover);color:var(--text)}.scroll{overflow:auto;flex:1}.preview{height:210px;display:grid;place-items:center;background-color:var(--preview);background-image:linear-gradient(45deg,var(--checker) 25%,transparent 25%),linear-gradient(-45deg,var(--checker) 25%,transparent 25%),linear-gradient(45deg,transparent 75%,var(--checker) 75%),linear-gradient(-45deg,transparent 75%,var(--checker) 75%);background-size:16px 16px;background-position:0 0,0 8px,8px -8px,-8px 0;border-bottom:1px solid var(--border)}.preview img{max-width:86%;max-height:86%;object-fit:contain;image-rendering:pixelated}
   section{padding:14px;border-bottom:1px solid var(--border)}.name-row{display:flex;justify-content:space-between;align-items:center;gap:6px}.name-row h2{font-size:12px;margin:0;font-weight:600;overflow-wrap:anywhere}.name-row p{font-size:11px;color:var(--faint);margin:3px 0 0;text-transform:capitalize}.name-row input{min-width:0;flex:1;height:27px;border:1px solid var(--accent);background:var(--bg);border-radius:4px;color:var(--text);font:inherit;font-size:12px;padding:0 7px;outline:0}h3{font-size:10px;letter-spacing:.14em;color:var(--faint);margin:0 0 11px}dl{margin:0;display:flex;flex-direction:column;gap:9px}dl div{display:flex;justify-content:space-between;gap:10px;font-size:11px}dt{color:var(--faint)}dd{margin:0;color:var(--muted);text-align:right}.path{font-size:11px;line-height:1.45;color:var(--muted);overflow-wrap:anywhere;margin:0 0 10px}.wide{height:28px;width:100%;border:1px solid var(--border);background:var(--surface);color:var(--muted);border-radius:4px;display:flex;gap:6px;align-items:center;justify-content:center;font:inherit;font-size:11px;cursor:pointer}.wide:hover{color:var(--text);border-color:var(--border-strong)}.used-list{display:flex;flex-direction:column;gap:8px}.used-list div{display:grid;grid-template-columns:13px minmax(0,1fr) auto;align-items:center;gap:5px;font-size:11px;color:var(--muted)}.used-list small{font-size:10px;color:var(--faint)}.version-list{display:flex;flex-direction:column;gap:5px}.version-list>div{display:grid;grid-template-columns:24px minmax(0,1fr) auto;gap:6px;align-items:center;padding:6px;border:1px solid var(--border);border-radius:4px;color:var(--muted)}.version-list>div.selected{border-color:var(--accent);background:var(--accent-dim)}.version-list span{font-size:10px;color:var(--faint)}.version-list strong{font-size:10px;font-weight:600;text-transform:capitalize}.version-list small{font-size:9px;color:var(--faint)}.muted{font-size:11px;line-height:1.5;color:var(--faint);margin:0}.danger{border-bottom:0}.danger button{border:0;background:transparent;color:#c56f6b;font:inherit;font-size:11px;display:flex;align-items:center;gap:7px;padding:4px;cursor:pointer}
 </style>
